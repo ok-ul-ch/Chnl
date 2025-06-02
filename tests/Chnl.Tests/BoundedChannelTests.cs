@@ -218,7 +218,8 @@ public class BoundedChannelTests
                         var value = (t << 16 | i).ToString();
                         
                         writtenValues.Add(value);
-                        channel.Write(value);
+                        var writeResult = channel.Write(value);
+                        writeResult.EnsureSuccess();
                         
                         Thread.Yield();
                     }
@@ -237,6 +238,7 @@ public class BoundedChannelTests
                         for (var i = 0; i < DefaultCapacity * 2; i++)
                         {
                             var result = channel.Read();
+                            result.EnsureSuccess();
                             readValues.Add(result.Item!);
                             Thread.Yield();
                         }

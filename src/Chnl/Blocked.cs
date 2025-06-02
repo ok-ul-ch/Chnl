@@ -4,8 +4,6 @@ internal struct Reads;
 internal struct Writes;
 
 /// A container for blocking channel operations
-///
-/// TODO: Extend this type with injected abstraction to support `select` as well
 internal class Blocked<T>
 {
     private readonly Lock _lock = new();
@@ -16,7 +14,7 @@ internal class Blocked<T>
     private readonly List<WaitTo<T>> _waitOperations = [];
 
     public bool IsEmpty => _isEmpty;
-    public bool IsClosed  { get; private set; } = false;
+    public bool IsClosed  { get; private set; }
     
     /// Attempts to register a new wait operation. Returns false if the waiting channel is closed
     ///
