@@ -82,11 +82,6 @@ internal class Blocked<T>
     {
         lock (_lock)
         {
-            if (_isEmpty || IsClosed)
-            {
-                return;
-            }
-            
             foreach (var wait in _waitOperations)
             {
                 wait.Unblock();

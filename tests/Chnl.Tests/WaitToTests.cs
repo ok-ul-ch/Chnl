@@ -7,24 +7,26 @@ public class WaitToTests
     public void Wait_ThenUnblock_Released()
     {
         var wait = new WaitTo<bool>();
-
+        var waitCompleted = new ManualResetEventSlim(false);
         var blockedThread = new Thread(() =>
         {
             wait.Wait();
+            waitCompleted.Set();
         });
         
         blockedThread.Start();
 
+        // Delay to ensure that Wait is blocking indeed
         Thread.Sleep(100);
         
-        // Ensure that the thread is still waiting
         Assert.That(blockedThread.IsAlive);
+        Assert.That(!waitCompleted.IsSet);
         
         wait.Unblock();
 
-        // Join with the blocked thread. In case if it is still blocked the test will fail with timeout
         blockedThread.Join();
         Assert.That(!blockedThread.IsAlive);
+        Assert.That(waitCompleted.IsSet);
     }
 
 

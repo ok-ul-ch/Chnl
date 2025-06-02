@@ -32,17 +32,6 @@ internal record struct Stamp
 /// * https://web.archive.org/web/20240213171458/http://www.1024cores.net/home/lock-free-algorithms/queues/bounded-mpmc-queue
 /// * https://github.com/crossbeam-rs/crossbeam/blob/master/crossbeam-channel/src/flavors/array.rs
 /// * https://docs.google.com/document/d/1yIAYmbvL3JxOKOjuCyon7JhW4cSv1wy5hC0ApeGMV9s/pub
-/// TODO Phase 1 -
-///     Tests
-///     Receiver/Sender API
-///         Read - define a result type so we can return without throwing an exception
-///         Write - define a result type so we can return without throwing an exception
-///     Benchmark
-/// 
-/// TODO Phase 2 -
-///     Improve Close to avoid excessive spinning in case when we know that the channel is closed already
-///     wait timeout support
-///     introduce own primitives instead of Monitor and ResetEvent usage
 public class BoundedChannel<T>
 {
     private struct Slot
@@ -82,7 +71,7 @@ public class BoundedChannel<T>
 
     public int Capacity => _buffer.Length;
 
-    public BoundedChannel(int capacity)
+    public BoundedChannel(uint capacity)
     {
         if (capacity <= 0)
         {
@@ -105,7 +94,7 @@ public class BoundedChannel<T>
     private Stamp ReadHead() => Stamp.From(Interlocked.Read(ref _head));
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private Stamp WriteTail(Stamp newTail) => Stamp.From(Interlocked.Exchange(ref _head, newTail.ToInt()));
+    private Stamp WriteTail(Stamp newTail) => Stamp.From(Interlocked.Exchange(ref _tail, newTail.ToInt()));
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private Stamp ReadTail() => Stamp.From(Interlocked.Read(ref _tail));
