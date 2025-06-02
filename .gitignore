@@ -64,3 +64,5 @@ nunit-*.xml
 *.userosscache
 *.sln.docstates
 .vs/
+*.DotSettings
+*.DotSettings.*

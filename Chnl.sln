@@ -1,0 +1,22 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Chnl", "src\Chnl\Chnl.csproj", "{D675A293-AB66-4EBD-8CD7-E18EE025D2DE}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Chnl.Tests", "tests\Chnl.Tests\Chnl.Tests.csproj", "{A77B431F-049A-4BB0-88F2-63B019F74952}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{D675A293-AB66-4EBD-8CD7-E18EE025D2DE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D675A293-AB66-4EBD-8CD7-E18EE025D2DE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D675A293-AB66-4EBD-8CD7-E18EE025D2DE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D675A293-AB66-4EBD-8CD7-E18EE025D2DE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A77B431F-049A-4BB0-88F2-63B019F74952}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A77B431F-049A-4BB0-88F2-63B019F74952}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A77B431F-049A-4BB0-88F2-63B019F74952}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A77B431F-049A-4BB0-88F2-63B019F74952}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
