@@ -37,8 +37,8 @@ public class BoundedChannel<T>
     /// Underlying ring buffer to store transmitted values in   
     private readonly Slot[] _buffer;
 
-    private readonly Blocked<Reads> _blockedReads;
-    private readonly Blocked<Writes> _blockedWrites;
+    private readonly Blocked<Read> _blockedReads;
+    private readonly Blocked<Write> _blockedWrites;
 
     public int Capacity => _buffer.Length;
 
@@ -146,15 +146,13 @@ public class BoundedChannel<T>
 
     public bool TryWrite(T? item)
     {
-        // TODO: Find better way to return reference to slot as well as next lap to read
-        ref var slot = ref AcquireWriteSlot(out var readAtLap);
-
-        if (readAtLap == null)
+        var writeSlot = AcquireWriteSlot();
+        if (!writeSlot.CanMutate)
         {
             return false;
         }
 
-        WriteSlot(item, ref slot, readAtLap.Value);
+        WriteIntoSlot(item, writeSlot);
         return true;
     }
 
@@ -216,8 +214,15 @@ public class BoundedChannel<T>
         }
     }
 
+    private readonly ref struct AcquiredSlot(ref Slot slot, uint? nextActionLap)
+    {
+        /// A reference to an element of inner `_buffer`. Used to mutate this element directly (either during read or write op) 
+        public readonly ref Slot Slot = ref slot;
+        public readonly uint? NextActionLap = nextActionLap;
+        public bool CanMutate => NextActionLap != null;
+    }
 
-    private ref Slot AcquireWriteSlot(out uint? readAtLap)
+    private AcquiredSlot AcquireWriteSlot()
     {
         var backoff = new LoopBackoff();
         var tail = ReadTail();
@@ -228,8 +233,7 @@ public class BoundedChannel<T>
 
             if (tail == Stamp.Closed)
             {
-                readAtLap = null;
-                return ref tailSlot;
+                return new AcquiredSlot(ref tailSlot, null);
             }
 
             var writeAtLap = tailSlot.NextActionLap;
@@ -247,8 +251,7 @@ public class BoundedChannel<T>
 
                 if (exchangedTail == tail)
                 {
-                    readAtLap = tail.Lap + 1;
-                    return ref tailSlot;
+                    return new AcquiredSlot(ref tailSlot, tail.Lap + 1);
                 }
 
                 // Other thread has won the race
@@ -260,8 +263,7 @@ public class BoundedChannel<T>
             else if (tail.Lap - writeAtLap > 0)
             {
                 // Channel is full as we have full lap of lag
-                readAtLap = null;
-                return ref tailSlot;
+                return new AcquiredSlot(ref tailSlot, null);
             }
             else
             {
@@ -275,14 +277,14 @@ public class BoundedChannel<T>
 
     public bool TryRead(out T? item)
     {
-        ref var slot = ref AcquireReadSlot(out var writeAtLap);
-        if (writeAtLap == null)
+        var readSlot = AcquireReadSlot();
+        if (!readSlot.CanMutate)
         {
             item = default;
             return false;
         }
-
-        item = ReadSlot(ref slot, writeAtLap.Value);
+        
+        item = ReadFromSlot(readSlot);
         return true;
     }
 
@@ -344,7 +346,7 @@ public class BoundedChannel<T>
     }
 
 
-    private ref Slot AcquireReadSlot(out uint? writeAtLap)
+    private AcquiredSlot AcquireReadSlot()
     {
         var backoff = new LoopBackoff();
         var head = ReadHead();
@@ -367,8 +369,7 @@ public class BoundedChannel<T>
 
                 if (exchangedHead == head)
                 {
-                    writeAtLap = head.Lap + 1;
-                    return ref headSlot;
+                    return new AcquiredSlot(ref headSlot, head.Lap + 1);
                 }
 
                 // Other thread has won the race
@@ -380,8 +381,7 @@ public class BoundedChannel<T>
             else if (head.Lap - nextReadLap > 0)
             {
                 // Channel is empty
-                writeAtLap = null;
-                return ref headSlot;
+                return new AcquiredSlot(ref headSlot, null);
             }
             else
             {
@@ -392,21 +392,22 @@ public class BoundedChannel<T>
         }
     }
 
-    private void WriteSlot(T? item, ref Slot slot, uint readAtLap)
+    private void WriteIntoSlot(T? item, AcquiredSlot acquiredSlot)
     {
-        // We hold the exclusive access to the slot, thus we can write directly 
+        // We hold the exclusive access to the given slot, thus we can read/write there directly
+        ref var slot = ref acquiredSlot.Slot;
         slot.Value = item;
-        slot.NextActionLap = readAtLap;
+        slot.NextActionLap = acquiredSlot.NextActionLap!.Value;
 
         // Notify next blocked reader
         _blockedReads.UnblockNext();
     }
 
-    private T? ReadSlot(ref Slot slot, uint writeAtLap)
+    private T? ReadFromSlot(AcquiredSlot acquiredSlot)
     {
-
-        // We hold the exclusive access to the slot, thus we can read/write directly
-        slot.NextActionLap = writeAtLap;
+        // We hold the exclusive access to the given slot, thus we can read/write there directly
+        ref var slot = ref acquiredSlot.Slot;
+        slot.NextActionLap = acquiredSlot.NextActionLap!.Value;
 
         var value = slot.Value;
         slot.Value = default;

@@ -3,9 +3,9 @@ namespace Chnl.Tests;
 [TestFixture]
 public class BlockedTests
 {
-    private Blocked<Writes> _blocked;
+    private Blocked<Write> _blocked;
 
-    private Thread SpawnWaitThread(WaitTo<Writes> wait)
+    private Thread SpawnWaitThread(WaitTo<Write> wait)
     {
         var thread = new Thread(wait.Wait);
         thread.Start();
@@ -15,7 +15,7 @@ public class BlockedTests
     [SetUp]
     public void SetUp()
     {
-        _blocked = new Blocked<Writes>();
+        _blocked = new Blocked<Write>();
     }
 
     [Test]
@@ -52,7 +52,7 @@ public class BlockedTests
     [Test]
     public void Unregister_UnknownItem_Ignored()
     {
-        Assert.DoesNotThrow(() => _blocked.Unregister(new WaitTo<Writes>()));
+        Assert.DoesNotThrow(() => _blocked.Unregister(new WaitTo<Write>()));
     }
 
     [Test]

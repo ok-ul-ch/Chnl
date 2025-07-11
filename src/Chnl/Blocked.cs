@@ -1,7 +1,7 @@
 namespace Chnl;
 
-internal struct Reads;
-internal struct Writes;
+internal struct Read;
+internal struct Write;
 
 /// A container for blocking channel operations
 internal class Blocked<T>
