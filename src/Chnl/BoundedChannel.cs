@@ -10,14 +10,9 @@ namespace Chnl;
 /// * https://docs.google.com/document/d/1yIAYmbvL3JxOKOjuCyon7JhW4cSv1wy5hC0ApeGMV9s/pub
 public class BoundedChannel<T>
 {
-    private struct Slot
+    private struct Slot(ulong nextActionLap)
     {
-        private ulong _nextActionLap;
-
-        public Slot(ulong nextActionLap)
-        {
-            _nextActionLap = nextActionLap;
-        }
+        private ulong _nextActionLap = nextActionLap;
 
         /// Defines the next Lap at which we can Write OR Read from that slot.
         ///
@@ -163,20 +158,20 @@ public class BoundedChannel<T>
         return true;
     }
 
-    public WriteResult Write(T? item)
+    public Result<Void> Write(T? item)
     {
         while (true)
         {
             // Try to write without blocking the calling thread
             if (TryWriteNonBlocking(item))
             {
-                return WriteResult.Success();
+                return Result<Void>.Success(new Void());
             }
 
             if (!_blockedWrites.TryRegister(out var write))
             {
                 // Register can fail only if the channel is closed
-                return WriteResult.Closed();
+                return Result<Void>.Closed(new Void());
             }
 
             using (write)
@@ -194,7 +189,7 @@ public class BoundedChannel<T>
 
                     if (isClosed)
                     {
-                        return WriteResult.Closed();
+                        return Result<Void>.Closed(new Void());
                     }
                 }
             }
@@ -217,7 +212,7 @@ public class BoundedChannel<T>
                 return false;
             }
 
-            backoff.Wait();
+            backoff.SpinOrYield();
         }
     }
 
@@ -260,7 +255,7 @@ public class BoundedChannel<T>
                 tail = exchangedTail;
 
                 // Spin backoff as most likely next tail is available
-                backoff.SpinWait();
+                backoff.Spin();
             }
             else if (tail.Lap - writeAtLap > 0)
             {
@@ -271,7 +266,7 @@ public class BoundedChannel<T>
             else
             {
                 // There is an unfinished read thus we wait
-                backoff.Wait();
+                backoff.SpinOrYield();
                 tail = ReadTail();
             }
         }
@@ -291,20 +286,20 @@ public class BoundedChannel<T>
         return true;
     }
 
-    public ReadResult<T> Read()
+    public Result<T> Read()
     {
         while (true)
         {
             // Try to write without blocking the calling thread
             if (TryReadNonBlocking(out var item))
             {
-                return ReadResult<T>.Success(item);
+                return Result<T>.Success(item);
             }
 
             if (!_blockedReads.TryRegister(out var read))
             {
                 // Register can fail only if the channel is closed
-                return ReadResult<T>.Closed(item);
+                return Result<T>.Closed(item);
             }
 
             using (read)
@@ -322,7 +317,7 @@ public class BoundedChannel<T>
 
                     if (isClosed)
                     {
-                        return ReadResult<T>.Closed(default);
+                        return Result<T>.Closed(default);
                     }
                 }
             }
@@ -344,7 +339,7 @@ public class BoundedChannel<T>
                 return false;
             }
 
-            backoff.Wait();
+            backoff.SpinOrYield();
         }
     }
 
@@ -380,7 +375,7 @@ public class BoundedChannel<T>
                 head = exchangedHead;
 
                 // Spin backoff as most likely next head is available
-                backoff.SpinWait();
+                backoff.Spin();
             }
             else if (head.Lap - nextReadLap > 0)
             {
@@ -391,7 +386,7 @@ public class BoundedChannel<T>
             else
             {
                 // The slot is not ready to be read from. We wait until concurrent write completes
-                backoff.Wait();
+                backoff.SpinOrYield();
                 head = ReadHead();
             }
         }
@@ -412,10 +407,10 @@ public class BoundedChannel<T>
 
         // We hold the exclusive access to the slot, thus we can read/write directly
         slot.NextActionLap = writeAtLap;
-        
+
         var value = slot.Value;
         slot.Value = default;
-        
+
         // Notify next blocked writer
         _blockedWrites.UnblockNext();
 

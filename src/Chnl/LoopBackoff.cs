@@ -9,7 +9,7 @@ internal struct LoopBackoff
     internal const int MaxSpinIteration = 6;
 
     /// Maximum number of thread yield iterations. The value is somewhat arbitrary and copied from `crossbeam`  
-    internal  const int MaxYieldIteration = 10;
+    internal const int MaxYieldIteration = 10;
 
     private int _waitIteration = 0;
 
@@ -22,7 +22,7 @@ internal struct LoopBackoff
 
     /// Waits for backoff time using only CPU spinning
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void SpinWait()
+    public void Spin()
     {
         Thread.SpinWait(1 << Math.Min(_waitIteration, MaxSpinIteration));
 
@@ -34,7 +34,7 @@ internal struct LoopBackoff
 
     /// Waits for backoff time. It can either be Spin (busy-wait/PAUSE) OR Yield (give up own CPU time and allow the OS scheduler to do other work)    
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void Wait()
+    public void SpinOrYield()
     {
         if (_waitIteration < MaxSpinIteration)
         {

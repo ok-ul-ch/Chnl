@@ -92,7 +92,7 @@ public class BlockedTests
     {
         _blocked.Close();
         Assert.DoesNotThrow(() => _blocked.Close());
-        
+
         Assert.That(_blocked.IsEmpty, Is.True);
         Assert.That(_blocked.IsClosed, Is.True);
     }
@@ -105,16 +105,16 @@ public class BlockedTests
             _blocked.TryRegister(out var wait);
             return SpawnWaitThread(wait!);
         }).ToArray();
-        
+
         foreach (var thread in waitOps)
-        { 
+        {
             Assert.That(thread.IsAlive, Is.True);
         }
-        
+
         _blocked.Close();
-        
+
         foreach (var thread in waitOps)
-        { 
+        {
             thread.Join();
             Assert.That(thread.IsAlive, Is.False);
         }

@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using NUnit.Framework.Legacy;
 
 namespace Chnl.Tests;
 
@@ -25,16 +24,22 @@ public class BoundedChannelTests
     [Test]
     public void Ctor_ZeroCapacity_ThrowsArgumentOutOfRangeException()
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => new BoundedChannel<int>(0));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+        {
+            _ = new BoundedChannel<int>(0);
+        });
     }
 
 
     [Test]
     public void Length_EmptyChannel_Zero()
     {
-        Assert.That(_channel.Length(), Is.EqualTo(0));
-        Assert.That(_channel.IsEmpty(), Is.True);
-        Assert.That(_channel.IsFull(), Is.False);
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(_channel.Length(), Is.EqualTo(0));
+            Assert.That(_channel.IsEmpty(), Is.True);
+            Assert.That(_channel.IsFull(), Is.False);
+        }
     }
 
     [Test]
@@ -45,9 +50,12 @@ public class BoundedChannelTests
             Assert.That(_channel.TryWrite(i), Is.True);
         }
 
-        Assert.That(_channel.Length(), Is.EqualTo(3));
-        Assert.That(_channel.IsEmpty(), Is.False);
-        Assert.That(_channel.IsFull(), Is.False);
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(_channel.Length(), Is.EqualTo(3));
+            Assert.That(_channel.IsEmpty(), Is.False);
+            Assert.That(_channel.IsFull(), Is.False);
+        }
     }
 
     [Test]
@@ -58,9 +66,12 @@ public class BoundedChannelTests
             Assert.That(_channel.TryWrite(i), Is.True);
         }
 
-        Assert.That(_channel.Length(), Is.EqualTo(_channel.Capacity));
-        Assert.That(_channel.IsEmpty(), Is.False);
-        Assert.That(_channel.IsFull(), Is.True);
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(_channel.Length(), Is.EqualTo(_channel.Capacity));
+            Assert.That(_channel.IsEmpty(), Is.False);
+            Assert.That(_channel.IsFull(), Is.True);
+        }
     }
 
     [Test]
@@ -81,9 +92,12 @@ public class BoundedChannelTests
             Assert.That(_channel.TryWrite(i), Is.True);
         }
 
-        Assert.That(_channel.Length(), Is.EqualTo(5));
-        Assert.That(_channel.IsEmpty(), Is.False);
-        Assert.That(_channel.IsFull(), Is.True);
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(_channel.Length(), Is.EqualTo(5));
+            Assert.That(_channel.IsEmpty(), Is.False);
+            Assert.That(_channel.IsFull(), Is.True);
+        }
     }
 
     [Test]
@@ -133,7 +147,7 @@ public class BoundedChannelTests
         var result = _channel.Read();
 
         Assert.That(result.IsSuccess, Is.True);
-        Assert.That(result.Item, Is.EqualTo(42));
+        Assert.That(result.Unwrap(), Is.EqualTo(42));
     }
 
 
@@ -185,7 +199,7 @@ public class BoundedChannelTests
         var readerThread = new Thread(() =>
         {
             var result = _channel.Read();
-            readValue = result.Item;
+            readValue = result.Unwrap();
             readCompleted.Set();
         });
 
@@ -216,11 +230,11 @@ public class BoundedChannelTests
                     for (var i = 0; i < DefaultCapacity * 2; i++)
                     {
                         var value = (t << 16 | i).ToString();
-                        
+
                         writtenValues.Add(value);
                         var writeResult = channel.Write(value);
                         writeResult.EnsureSuccess();
-                        
+
                         Thread.Yield();
                     }
                 });
@@ -239,7 +253,7 @@ public class BoundedChannelTests
                         {
                             var result = channel.Read();
                             result.EnsureSuccess();
-                            readValues.Add(result.Item!);
+                            readValues.Add(result.Unwrap()!);
                             Thread.Yield();
                         }
                     });
@@ -321,7 +335,7 @@ public class BoundedChannelTests
         {
             var result = _channel.Read();
             Assert.That(result.IsSuccess, Is.True);
-            Assert.That(result.Item, Is.EqualTo(i));
+            Assert.That(result.Unwrap(), Is.EqualTo(i));
         }
     }
 
@@ -334,7 +348,7 @@ public class BoundedChannelTests
             _channel.TryWrite(42);
         }
 
-        var writerResults = new ConcurrentBag<WriteResult>();
+        var writerResults = new ConcurrentBag<Result<Void>>();
         var writersCompletedEvents = new List<ManualResetEventSlim>();
 
         var writerThreads = Enumerable.Range(0, 8).Select(i =>
@@ -381,9 +395,9 @@ public class BoundedChannelTests
     [Test, CancelAfter(1000)]
     public void Close_UnblocksBlockedReaders()
     {
-        var readerResults = new ConcurrentBag<ReadResult<int>>();
+        var readerResults = new ConcurrentBag<Result<int>>();
         var readersCompletedEvents = new List<ManualResetEventSlim>();
-        var readerThreads = Enumerable.Range(0, 8).Select(i =>
+        var readerThreads = Enumerable.Range(0, 8).Select(_ =>
         {
             var completed = new ManualResetEventSlim(false);
             readersCompletedEvents.Add(completed);
@@ -393,7 +407,7 @@ public class BoundedChannelTests
                 readerResults.Add(result);
                 completed.Set();
             });
-            
+
             thread.Start();
             return thread;
         }).ToList();

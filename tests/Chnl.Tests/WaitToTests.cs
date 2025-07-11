@@ -13,15 +13,15 @@ public class WaitToTests
             wait.Wait();
             waitCompleted.Set();
         });
-        
+
         blockedThread.Start();
 
         // Delay to ensure that Wait is blocking indeed
         Thread.Sleep(100);
-        
+
         Assert.That(blockedThread.IsAlive);
         Assert.That(!waitCompleted.IsSet);
-        
+
         wait.Unblock();
 
         blockedThread.Join();

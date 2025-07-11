@@ -14,8 +14,8 @@ internal class Blocked<T>
     private readonly List<WaitTo<T>> _waitOperations = [];
 
     public bool IsEmpty => _isEmpty;
-    public bool IsClosed  { get; private set; }
-    
+    public bool IsClosed { get; private set; }
+
     /// Attempts to register a new wait operation. Returns false if the waiting channel is closed
     ///
     /// The caller must double-check his "wait" predicate and call <see cref="Unregister"/> method if it is not relevant anymore (i.e. the caller can proceed without blocking as requested operation has become available just now) 
