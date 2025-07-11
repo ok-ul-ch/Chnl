@@ -5,7 +5,7 @@ public class BlockedTests
 {
     private Blocked<Write> _blocked;
 
-    private Thread SpawnWaitThread(WaitTo<Write> wait)
+    private static Thread SpawnWaitThread(WaitTo<Write> wait)
     {
         var thread = new Thread(wait.Wait);
         thread.Start();
