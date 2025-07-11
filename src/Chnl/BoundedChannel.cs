@@ -283,7 +283,7 @@ public class BoundedChannel<T>
             item = default;
             return false;
         }
-        
+
         item = ReadFromSlot(readSlot);
         return true;
     }

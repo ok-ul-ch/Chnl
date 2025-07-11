@@ -14,7 +14,7 @@ internal struct LoopBackoff
     private int _waitIteration = 0;
 
     /// Signals to the caller that it is time for him to give up waiting this Backoff and block the executing thread instead
-    public bool IsExhausted => _waitIteration > MaxYieldIteration;
+    public readonly bool IsExhausted => _waitIteration > MaxYieldIteration;
 
     public LoopBackoff()
     {
