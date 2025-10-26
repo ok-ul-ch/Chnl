@@ -10,31 +10,25 @@ namespace Chnl;
 /// * https://docs.google.com/document/d/1yIAYmbvL3JxOKOjuCyon7JhW4cSv1wy5hC0ApeGMV9s/pub
 public class BoundedChannel<T>
 {
-    private struct Slot(ulong nextActionLap)
+    private struct Slot(uint targetActionLap)
     {
-        private ulong _nextActionLap = nextActionLap;
-
-        /// Defines the next Lap at which we can Write OR Read from that slot.
+        /// Defines the target Lap at which we can Write OR Read from that slot.
         ///
         /// Writes are even, Reads are odd
         ///
-        /// We can write/read this slot ONLY if the Channel's tail/head's Lap is equal to <see cref="NextActionLap"/> 
-        public uint NextActionLap
-        {
-            get => (uint)Interlocked.Read(ref _nextActionLap);
-            set => Interlocked.Exchange(ref _nextActionLap, value);
-        }
+        /// We can write/read this slot ONLY if the Channel's tail/head's Lap is equal to <see cref="TargetActionLap"/> 
+        public volatile uint TargetActionLap = targetActionLap;
 
-        public T? Value;
+        public T? Value = default;
     }
 
-    /// Current read pointer. Head of the channel's queue
-    private ulong _head;
+    /// Position of the next `Read` operation. Head of the channel's queue
+    private long _head;
 
-    /// Current write pointer. The queue's tail
-    private ulong _tail;
+    /// Position of the next `Write` operation. The queue's tail
+    private long _tail;
 
-    /// Underlying ring buffer to store transmitted values in   
+    /// Underlying ring buffer. Stores transmitted values
     private readonly Slot[] _buffer;
 
     private readonly Blocked<Read> _blockedReads;
@@ -42,7 +36,7 @@ public class BoundedChannel<T>
 
     public int Capacity => _buffer.Length;
 
-    public BoundedChannel(uint capacity)
+    public BoundedChannel(int capacity)
     {
         if (capacity <= 0)
         {
