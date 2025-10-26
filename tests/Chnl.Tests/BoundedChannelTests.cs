@@ -2,7 +2,9 @@ using System.Collections.Concurrent;
 
 namespace Chnl.Tests;
 
-[TestFixture]
+#pragma warning disable CS0618 // Type or member is obsolete
+[TestFixture, Timeout(5000)]
+#pragma warning restore CS0618 // Type or member is obsolete
 public class BoundedChannelTests
 {
     private BoundedChannel<int> _channel;

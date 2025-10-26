@@ -1,6 +1,8 @@
 namespace Chnl.Tests;
 
-[TestFixture]
+#pragma warning disable CS0618 // Type or member is obsolete
+[TestFixture, Timeout(5000)]
+#pragma warning restore CS0618 // Type or member is obsolete
 public class BlockedTests
 {
     private Blocked<Write> _blocked;
@@ -62,7 +64,7 @@ public class BlockedTests
         Assert.DoesNotThrow(() => _blocked.UnblockNext());
     }
 
-    [Test, CancelAfter(1000)]
+    [Test]
     public void UnblockNext_MultipleItems_UnblocksFIFO()
     {
         var waitOps = Enumerable.Range(0, 10).Select(_ =>
@@ -97,7 +99,7 @@ public class BlockedTests
         Assert.That(_blocked.IsClosed, Is.True);
     }
 
-    [Test, CancelAfter(1000)]
+    [Test]
     public void Close_MultipleBlockedThreads_UnblocksAll()
     {
         var waitOps = Enumerable.Range(0, 10).Select(_ =>
