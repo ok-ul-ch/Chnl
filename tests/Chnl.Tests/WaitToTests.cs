@@ -1,9 +1,11 @@
 namespace Chnl.Tests;
 
-[TestFixture]
+#pragma warning disable CS0618 // Type or member is obsolete
+[TestFixture, Timeout(5000)]
+#pragma warning restore CS0618 // Type or member is obsolete
 public class WaitToTests
 {
-    [Test, CancelAfter(1000)]
+    [Test]
     public void Wait_ThenUnblock_Released()
     {
         var wait = new WaitTo<bool>();
@@ -30,7 +32,7 @@ public class WaitToTests
     }
 
 
-    [Test, CancelAfter(100)]
+    [Test]
     public void Unblock_ThenWait_ImmediatelyReleased()
     {
         var wait = new WaitTo<bool>();
