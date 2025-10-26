@@ -154,7 +154,7 @@ public class BoundedChannelTests
     }
 
 
-    [Test,]
+    [Test]
     public void Write_FullChannel_BlocksUntilSpaceAvailable()
     {
         for (var i = 0; i < DefaultCapacity; i++)
@@ -193,7 +193,7 @@ public class BoundedChannelTests
         Assert.That(item, Is.EqualTo(42));
     }
 
-    [Test,]
+    [Test]
     public void Read_EmptyChannel_BlocksUntilItemAvailable()
     {
         var readCompleted = new ManualResetEventSlim(false);
@@ -218,7 +218,7 @@ public class BoundedChannelTests
         Assert.That(readValue, Is.EqualTo(42));
     }
 
-    [Test,]
+    [Test]
     public void ReadWrite_MultipleThreads_AllMessagesDelivered()
     {
         var channel = new BoundedChannel<string>(DefaultCapacity);
@@ -343,7 +343,7 @@ public class BoundedChannelTests
     }
 
 
-    [Test,]
+    [Test]
     public void Close_UnblocksBlockedWriters()
     {
         for (var i = 0; i < DefaultCapacity; i++)
@@ -396,7 +396,7 @@ public class BoundedChannelTests
     }
 
 
-    [Test,]
+    [Test]
     public void Close_UnblocksBlockedReaders()
     {
         var readerResults = new ConcurrentBag<Result<int>>();
