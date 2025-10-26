@@ -2,7 +2,9 @@ using System.Collections.Concurrent;
 
 namespace Chnl.Tests;
 
-[TestFixture]
+#pragma warning disable CS0618 // Type or member is obsolete
+[TestFixture, Timeout(5000)]
+#pragma warning restore CS0618 // Type or member is obsolete
 public class BoundedChannelTests
 {
     private BoundedChannel<int> _channel;
@@ -24,12 +26,8 @@ public class BoundedChannelTests
     [Test]
     public void Ctor_ZeroCapacity_ThrowsArgumentOutOfRangeException()
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() =>
-        {
-            _ = new BoundedChannel<int>(0);
-        });
+        Assert.Throws<ArgumentOutOfRangeException>(() => { _ = new BoundedChannel<int>(0); });
     }
-
 
     [Test]
     public void Length_EmptyChannel_Zero()
@@ -45,17 +43,22 @@ public class BoundedChannelTests
     [Test]
     public void Length_PartiallyFilledChannel_CorrectCount()
     {
-        for (var i = 0; i < 3; i++)
+        for (var i = 0; i < _channel.Capacity; i++)
         {
             Assert.That(_channel.TryWrite(i), Is.True);
+            Assert.That(_channel.Length(), Is.EqualTo(i + 1));
         }
 
         using (Assert.EnterMultipleScope())
         {
-            Assert.That(_channel.Length(), Is.EqualTo(3));
+            Assert.That(_channel.Length(), Is.EqualTo(_channel.Capacity));
             Assert.That(_channel.IsEmpty(), Is.False);
-            Assert.That(_channel.IsFull(), Is.False);
+            Assert.That(_channel.IsFull(), Is.True);
         }
+
+        // Edge case when write/read indices require Capacity to compute Length
+        Assert.That(_channel.TryRead(out _), Is.True);
+        Assert.That(_channel.Length(), Is.EqualTo(_channel.Capacity - 1));
     }
 
     [Test]
@@ -151,7 +154,7 @@ public class BoundedChannelTests
     }
 
 
-    [Test, CancelAfter(1000)]
+    [Test,]
     public void Write_FullChannel_BlocksUntilSpaceAvailable()
     {
         for (var i = 0; i < DefaultCapacity; i++)
@@ -190,7 +193,7 @@ public class BoundedChannelTests
         Assert.That(item, Is.EqualTo(42));
     }
 
-    [Test, CancelAfter(1000)]
+    [Test,]
     public void Read_EmptyChannel_BlocksUntilItemAvailable()
     {
         var readCompleted = new ManualResetEventSlim(false);
@@ -215,7 +218,7 @@ public class BoundedChannelTests
         Assert.That(readValue, Is.EqualTo(42));
     }
 
-    [Test, CancelAfter(5000)]
+    [Test,]
     public void ReadWrite_MultipleThreads_AllMessagesDelivered()
     {
         var channel = new BoundedChannel<string>(DefaultCapacity);
@@ -340,7 +343,7 @@ public class BoundedChannelTests
     }
 
 
-    [Test, CancelAfter(1000)]
+    [Test,]
     public void Close_UnblocksBlockedWriters()
     {
         for (var i = 0; i < DefaultCapacity; i++)
@@ -392,7 +395,8 @@ public class BoundedChannelTests
         Assert.That(writerResults.All(r => r.Status == Status.Closed), Is.True);
     }
 
-    [Test, CancelAfter(1000)]
+
+    [Test,]
     public void Close_UnblocksBlockedReaders()
     {
         var readerResults = new ConcurrentBag<Result<int>>();
@@ -434,5 +438,84 @@ public class BoundedChannelTests
         // Verify all readers got closed status
         Assert.That(readerResults.Count, Is.EqualTo(8));
         Assert.That(readerResults.All(r => r.Status == Status.Closed), Is.True);
+    }
+
+    [Test]
+    public void AllOperations_HeadWraps_Success()
+    {
+        var channel = new BoundedChannel<int>(DefaultCapacity, Position.MaxLap, 0);
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(channel.Length(), Is.EqualTo(0));
+            Assert.That(channel.IsEmpty(), Is.True);
+            Assert.That(channel.IsFull(), Is.False);
+        }
+
+        for (var i = 1; i <= DefaultCapacity; i++)
+        {
+            Assert.That(channel.TryWrite(i), Is.True);
+        }
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(channel.Length(), Is.EqualTo(DefaultCapacity));
+            Assert.That(channel.IsEmpty(), Is.False);
+            Assert.That(channel.IsFull(), Is.True);
+        }
+
+        Assert.That(channel.TryWrite(99), Is.False);
+
+        for (var i = 1; i <= DefaultCapacity; i++)
+        {
+            Assert.That(channel.TryRead(out var item), Is.True);
+            Assert.That(item, Is.EqualTo(i));
+        }
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(channel.Length(), Is.EqualTo(0));
+            Assert.That(channel.IsEmpty(), Is.True);
+            Assert.That(channel.IsFull(), Is.False);
+        }
+
+        Assert.That(channel.TryRead(out _), Is.False);
+    }
+
+
+    [Test]
+    public void AllOperations_TailWraps_Success()
+    {
+        var channel = new BoundedChannel<int>(DefaultCapacity, Position.MaxLap - 1, Position.MaxLap);
+
+        // Fill the channel in full so the tail wraps to 0
+        for (var i = 1; i <= DefaultCapacity; i++)
+        {
+            Assert.That(channel.TryWrite(i), Is.True);
+        }
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(channel.Length(), Is.EqualTo(DefaultCapacity));
+            Assert.That(channel.IsEmpty(), Is.False);
+            Assert.That(channel.IsFull(), Is.True);
+        }
+
+        Assert.That(channel.TryWrite(99), Is.False);
+
+        for (var i = 1; i <= DefaultCapacity; i++)
+        {
+            Assert.That(channel.TryRead(out var item), Is.True);
+            Assert.That(item, Is.EqualTo(i));
+        }
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(channel.Length(), Is.EqualTo(0));
+            Assert.That(channel.IsEmpty(), Is.True);
+            Assert.That(channel.IsFull(), Is.False);
+        }
+
+        Assert.That(channel.TryRead(out _), Is.False);
     }
 }

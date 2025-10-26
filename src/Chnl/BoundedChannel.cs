@@ -10,31 +10,25 @@ namespace Chnl;
 /// * https://docs.google.com/document/d/1yIAYmbvL3JxOKOjuCyon7JhW4cSv1wy5hC0ApeGMV9s/pub
 public class BoundedChannel<T>
 {
-    private struct Slot(ulong nextActionLap)
+    private struct Slot(uint targetActionLap)
     {
-        private ulong _nextActionLap = nextActionLap;
-
-        /// Defines the next Lap at which we can Write OR Read from that slot.
+        /// Defines the target Lap at which we can Write OR Read from that slot.
         ///
         /// Writes are even, Reads are odd
         ///
-        /// We can write/read this slot ONLY if the Channel's tail/head's Lap is equal to <see cref="NextActionLap"/> 
-        public uint NextActionLap
-        {
-            get => (uint)Interlocked.Read(ref _nextActionLap);
-            set => Interlocked.Exchange(ref _nextActionLap, value);
-        }
+        /// We can write/read this slot ONLY if the Channel's tail/head's Lap is equal to <see cref="TargetActionLap"/> 
+        public volatile uint TargetActionLap = targetActionLap;
 
-        public T? Value;
+        public T? Value = default;
     }
 
-    /// Current read pointer. Head of the channel's queue
-    private ulong _head;
+    /// Position of the next `Read` operation. Head of the channel's queue
+    private long _head;
 
-    /// Current write pointer. The queue's tail
-    private ulong _tail;
+    /// Position of the next `Write` operation. The queue's tail
+    private long _tail;
 
-    /// Underlying ring buffer to store transmitted values in   
+    /// Underlying ring buffer. Stores transmitted values
     private readonly Slot[] _buffer;
 
     private readonly Blocked<Read> _blockedReads;
@@ -42,41 +36,53 @@ public class BoundedChannel<T>
 
     public int Capacity => _buffer.Length;
 
-    public BoundedChannel(uint capacity)
+    public BoundedChannel(int capacity)
     {
         if (capacity <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(capacity), "Capacity must be greater than zero.");
         }
 
-        _tail = Stamp.TailStart.ToInt();
-        _head = Stamp.HeadStart.ToInt();
+        _tail = Position.TailStart.ToInt();
+        _head = Position.HeadStart.ToInt();
         _buffer = new Slot[capacity];
         _blockedReads = new();
         _blockedWrites = new();
 
         for (var i = 0; i < _buffer.Length; i++)
         {
-            _buffer[i] = new Slot(Stamp.TailStart.Lap);
+            _buffer[i] = new Slot(Position.TailStart.Lap);
+        }
+    }
+
+    internal BoundedChannel(int capacity, uint tailLap, uint headLap)
+        : this(capacity)
+    {
+        _tail = new Position(tailLap, 0).ToInt();
+        _head = new Position(headLap, 0).ToInt();
+
+        for (var i = 0; i < _buffer.Length; i++)
+        {
+            _buffer[i] = new Slot(tailLap);
         }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private Stamp ReadHead() => Stamp.From(Interlocked.Read(ref _head));
+    private Position ReadHead() => Position.From(Interlocked.Read(ref _head));
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private Stamp WriteTail(Stamp newTail) => Stamp.From(Interlocked.Exchange(ref _tail, newTail.ToInt()));
+    private Position WriteTail(Position newTail) => Position.From(Interlocked.Exchange(ref _tail, newTail.ToInt()));
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private Stamp ReadTail() => Stamp.From(Interlocked.Read(ref _tail));
+    private Position ReadTail() => Position.From(Interlocked.Read(ref _tail));
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private Stamp CompareExchangeHead(Stamp newHead, Stamp oldHead) =>
-        Stamp.From(Interlocked.CompareExchange(ref _head, newHead.ToInt(), oldHead.ToInt()));
+    private Position CompareExchangeHead(Position newHead, Position oldHead) =>
+        Position.From(Interlocked.CompareExchange(ref _head, newHead.ToInt(), oldHead.ToInt()));
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private Stamp CompareExchangeTail(Stamp newTail, Stamp oldTail) =>
-        Stamp.From(Interlocked.CompareExchange(ref _tail, newTail.ToInt(), oldTail.ToInt()));
+    private Position CompareExchangeTail(Position newTail, Position oldTail) =>
+        Position.From(Interlocked.CompareExchange(ref _tail, newTail.ToInt(), oldTail.ToInt()));
 
     public int Length()
     {
@@ -87,54 +93,59 @@ public class BoundedChannel<T>
             var head = ReadHead();
 
             // Load tail again.
-            // If it hasn't changed while we were loading the head - we got the consistent view on state
+            // If it hasn't changed while we were loading the head - we got the consistent view on state, as there were no new writes
             if (ReadTail() != tail)
             {
                 continue;
             }
 
-            var headIndex = head.BufferIndex;
-            var tailIndex = tail.BufferIndex;
+            var headIndex = head.Index;
+            var tailIndex = tail.Index;
 
             if (headIndex < tailIndex)
             {
+                // Can happen only when we are in the same lap
+                // Then the length is just - write index minus read index
                 return tailIndex - headIndex;
             }
 
             if (headIndex > tailIndex)
             {
+                // Read/Write in different laps. Thus compute the length with the help of Capacity
                 return Capacity - headIndex + tailIndex;
             }
 
-            return head.Lap > tail.Lap ? 0 : Capacity;
+            // The channel is either empty or full
+            return head.Lap == tail.WrapAddLap(1) ? 0 : Capacity;
         }
     }
 
     public bool IsEmpty()
     {
-        var tail = ReadTail();
         var head = ReadHead();
+        var tail = ReadTail();
 
-        return head.BufferIndex == tail.BufferIndex && head.Lap > tail.Lap;
+        // The channel is empty when head is exactly one lap ahead
+        return head.Index == tail.Index && head.Lap == tail.WrapAddLap(1);
     }
 
     public bool IsFull()
     {
-        var tail = ReadTail();
         var head = ReadHead();
+        var tail = ReadTail();
 
-        return head.BufferIndex == tail.BufferIndex && head.Lap < tail.Lap;
+        // The channel is full when head is exactly one lap behind
+        return head.Index == tail.Index && head.WrapAddLap(1) == tail.Lap;
     }
 
     public bool IsClosed()
     {
-        return ReadTail() == Stamp.Closed;
+        return ReadTail().IsClosed;
     }
-
 
     public bool TryClose()
     {
-        if (WriteTail(Stamp.Closed) == Stamp.Closed)
+        if (WriteTail(Position.Closed).IsClosed)
         {
             return false;
         }
@@ -169,7 +180,7 @@ public class BoundedChannel<T>
             if (!_blockedWrites.TryRegister(out var write))
             {
                 // Register can fail only if the channel is closed
-                return Result<Void>.Closed(new Void());
+                return Result<Void>.Closed();
             }
 
             using (write)
@@ -187,7 +198,7 @@ public class BoundedChannel<T>
 
                     if (isClosed)
                     {
-                        return Result<Void>.Closed(new Void());
+                        return Result<Void>.Closed();
                     }
                 }
             }
@@ -214,12 +225,13 @@ public class BoundedChannel<T>
         }
     }
 
-    private readonly ref struct AcquiredSlot(ref Slot slot, uint? nextActionLap)
+    private readonly ref struct AcquiredSlot(ref Slot slot, uint? targetActionLap)
     {
         /// A reference to an element of inner `_buffer`. Used to mutate this element directly (either during read or write op) 
         public readonly ref Slot Slot = ref slot;
-        public readonly uint? NextActionLap = nextActionLap;
-        public bool CanMutate => NextActionLap != null;
+
+        public readonly uint? TargetActionLap = targetActionLap;
+        public bool CanMutate => TargetActionLap.HasValue;
     }
 
     private AcquiredSlot AcquireWriteSlot()
@@ -229,29 +241,31 @@ public class BoundedChannel<T>
 
         while (true)
         {
-            ref var tailSlot = ref _buffer[tail.BufferIndex];
+            // IMPORTANT: Buffer Index can't grow above `Capacity - 1` or be negative for Bounded channel
+            ref var tailSlot = ref _buffer[tail.Index];
 
-            if (tail == Stamp.Closed)
+            if (tail.IsClosed)
             {
+                // TO-OPTIMIZE: Return the error explicitly, so that the caller can exit early
                 return new AcquiredSlot(ref tailSlot, null);
             }
 
-            var writeAtLap = tailSlot.NextActionLap;
+            var writeAtLap = tailSlot.TargetActionLap;
 
             // There is a slot available for writing (not used by in-progress read)
             if (tail.Lap == writeAtLap)
             {
                 // Prepare position for next write
-                var nextTail = tail.BufferIndex + 1 < Capacity
-                    ? tail with { BufferIndex = tail.BufferIndex + 1 }
-                    : new Stamp(tail.Lap + 2, 0);
+                var nextTail = tail.Index < Capacity - 1
+                    ? tail.MoveNextIndex()
+                    : tail.MoveNextLap();
 
                 // Acquire the Write slot
                 var exchangedTail = CompareExchangeTail(nextTail, tail);
 
                 if (exchangedTail == tail)
                 {
-                    return new AcquiredSlot(ref tailSlot, tail.Lap + 1);
+                    return new AcquiredSlot(ref tailSlot, tail.WrapAddLap(1));
                 }
 
                 // Other thread has won the race
@@ -260,7 +274,7 @@ public class BoundedChannel<T>
                 // Spin backoff as most likely next tail is available
                 backoff.Spin();
             }
-            else if (tail.Lap - writeAtLap > 0)
+            else if (tail.Lap == Position.WrapAddLap(writeAtLap, 1))
             {
                 // Channel is full as we have full lap of lag
                 return new AcquiredSlot(ref tailSlot, null);
@@ -273,7 +287,6 @@ public class BoundedChannel<T>
             }
         }
     }
-
 
     public bool TryRead(out T? item)
     {
@@ -301,14 +314,18 @@ public class BoundedChannel<T>
             if (!_blockedReads.TryRegister(out var read))
             {
                 // Register can fail only if the channel is closed
-                return Result<T>.Closed(item);
+                return Result<T>.Closed();
             }
 
             using (read)
             {
-                var isClosed = IsClosed();
-                if (!isClosed && IsEmpty())
+                if (IsEmpty())
                 {
+                    if (IsClosed())
+                    {
+                        return Result<T>.Closed();
+                    }
+
                     // Fall back to the blocking wait as most likely the channel will remain empty for longer time
                     read!.Wait();
                 }
@@ -316,11 +333,6 @@ public class BoundedChannel<T>
                 {
                     // Meanwhile, some writer has written to the channel. We shall not wait and try to perform the read again
                     _blockedReads.Unregister(read!);
-
-                    if (isClosed)
-                    {
-                        return Result<T>.Closed(default);
-                    }
                 }
             }
         }
@@ -353,23 +365,24 @@ public class BoundedChannel<T>
 
         while (true)
         {
-            ref var headSlot = ref _buffer[head.BufferIndex];
-            var nextReadLap = headSlot.NextActionLap;
+            // IMPORTANT: Buffer Index can't grow above `Capacity - 1` or be negative for Bounded channel
+            ref var headSlot = ref _buffer[head.Index];
+            var nextReadLap = headSlot.TargetActionLap;
 
             // There is something to read from this slot
             if (head.Lap == nextReadLap)
             {
                 // Prepare position for next read
-                var nextHead = head.BufferIndex + 1 < Capacity
-                    ? head with { BufferIndex = head.BufferIndex + 1 }
-                    : new Stamp(head.Lap + 2, 0);
+                var nextHead = head.Index < Capacity - 1
+                    ? head.MoveNextIndex()
+                    : head.MoveNextLap();
 
                 // Acquire the Read slot
                 var exchangedHead = CompareExchangeHead(nextHead, head);
 
                 if (exchangedHead == head)
                 {
-                    return new AcquiredSlot(ref headSlot, head.Lap + 1);
+                    return new AcquiredSlot(ref headSlot, Position.WrapAddLap(head.Lap, 1));
                 }
 
                 // Other thread has won the race
@@ -378,8 +391,10 @@ public class BoundedChannel<T>
                 // Spin backoff as most likely next head is available
                 backoff.Spin();
             }
-            else if (head.Lap - nextReadLap > 0)
+            else if (head.Lap == Position.WrapAddLap(nextReadLap, 1))
             {
+                // TO-OPTIMIZE: Check if the channel is closed an return the error explicitly, so that the caller can exit early
+
                 // Channel is empty
                 return new AcquiredSlot(ref headSlot, null);
             }
@@ -397,7 +412,7 @@ public class BoundedChannel<T>
         // We hold the exclusive access to the given slot, thus we can read/write there directly
         ref var slot = ref acquiredSlot.Slot;
         slot.Value = item;
-        slot.NextActionLap = acquiredSlot.NextActionLap!.Value;
+        slot.TargetActionLap = acquiredSlot.TargetActionLap!.Value;
 
         // Notify next blocked reader
         _blockedReads.UnblockNext();
@@ -407,10 +422,11 @@ public class BoundedChannel<T>
     {
         // We hold the exclusive access to the given slot, thus we can read/write there directly
         ref var slot = ref acquiredSlot.Slot;
-        slot.NextActionLap = acquiredSlot.NextActionLap!.Value;
 
         var value = slot.Value;
         slot.Value = default;
+
+        slot.TargetActionLap = acquiredSlot.TargetActionLap!.Value;
 
         // Notify next blocked writer
         _blockedWrites.UnblockNext();
