@@ -49,8 +49,8 @@ internal readonly record struct Position
     public Position MoveNextLap() => new((ClosedMask & Sequence) | WrapAddLap(2), 0);
 
     /// Creates a new Position representing the next index within the same lap
-    /// <br/>
-    /// Throws <see cref="OverflowException"/> if the current index is int.MaxValue
+    /// 
+    /// If the index overflows, it wraps around
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public Position MoveNextIndex() => new(Sequence, unchecked(Index + 1));
 

@@ -23,6 +23,7 @@ public class BoundedChannel<T>
     }
 
     /// Position of the next `Read` operation. Head of the channel's queue
+    /// TO-OPTIMIZE: [Needs Benchmark] Adjust the layout of the head/tail to avoid false sharing (i.e. write thread locks read cache line)
     private long _head;
 
     /// Position of the next `Write` operation. The queue's tail
