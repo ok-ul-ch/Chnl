@@ -63,7 +63,7 @@ internal class Blocked<T>
                 return;
             }
 
-            var waitTo = _waitOperations.FirstOrDefault();
+            var waitTo = _waitOperations[0];
 
             if (waitTo == null)
             {
