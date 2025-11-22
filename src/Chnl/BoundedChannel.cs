@@ -173,7 +173,7 @@ public class BoundedChannel<T>
         while (true)
         {
             // Try to write without blocking the calling thread
-            if (TryWriteNonBlocking(item))
+            if (TryWrite(item))
             {
                 return Result<Void>.Success(new Void());
             }
@@ -203,31 +203,10 @@ public class BoundedChannel<T>
         }
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private bool TryWriteNonBlocking(T? item)
-    {
-        var backoff = new LoopBackoff();
-        while (true)
-        {
-            if (TryWrite(item))
-            {
-                return true;
-            }
-
-            if (backoff.IsExhausted)
-            {
-                return false;
-            }
-
-            backoff.SpinOrYield();
-        }
-    }
-
     private readonly ref struct AcquiredSlot(ref Slot slot, uint? targetActionLap)
     {
         /// A reference to an element of inner `_buffer`. Used to mutate this element directly (either during read or write op) 
         public readonly ref Slot Slot = ref slot;
-
         public readonly uint? TargetActionLap = targetActionLap;
         public bool CanMutate => TargetActionLap.HasValue;
     }
@@ -245,6 +224,11 @@ public class BoundedChannel<T>
             if (tail.IsClosed)
             {
                 // TO-OPTIMIZE: Return the error explicitly, so that the caller can exit early
+                return new AcquiredSlot(ref tailSlot, null);
+            }
+
+            if (backoff.IsExhausted)
+            {
                 return new AcquiredSlot(ref tailSlot, null);
             }
 
@@ -270,7 +254,7 @@ public class BoundedChannel<T>
                 tail = exchangedTail;
 
                 // Spin backoff as most likely next tail is available
-                backoff.Spin();
+                backoff.SpinOrYield();
             }
             else if (tail.Lap == Position.WrapAddLap(writeAtLap, 1))
             {
@@ -304,7 +288,7 @@ public class BoundedChannel<T>
         while (true)
         {
             // Try to write without blocking the calling thread
-            if (TryReadNonBlocking(out var item))
+            if (TryRead(out var item))
             {
                 return Result<T>.Success(item);
             }
@@ -333,25 +317,6 @@ public class BoundedChannel<T>
         }
     }
 
-    private bool TryReadNonBlocking(out T? item)
-    {
-        var backoff = new LoopBackoff();
-        while (true)
-        {
-            if (TryRead(out item))
-            {
-                return true;
-            }
-
-            if (backoff.IsExhausted)
-            {
-                return false;
-            }
-
-            backoff.SpinOrYield();
-        }
-    }
-
 
     private AcquiredSlot AcquireReadSlot()
     {
@@ -362,6 +327,12 @@ public class BoundedChannel<T>
         {
             // IMPORTANT: Buffer Index can't grow above `Capacity - 1` or be negative for Bounded channel
             ref var headSlot = ref _buffer[head.Index];
+
+            if (backoff.IsExhausted)
+            {
+                return new AcquiredSlot(ref headSlot, null);
+            }
+
             var nextReadLap = headSlot.TargetActionLap;
 
             // There is something to read from this slot
@@ -384,7 +355,7 @@ public class BoundedChannel<T>
                 head = exchangedHead;
 
                 // Spin backoff as most likely next head is available
-                backoff.Spin();
+                backoff.SpinOrYield();
             }
             else if (head.Lap == Position.WrapAddLap(nextReadLap, 1))
             {

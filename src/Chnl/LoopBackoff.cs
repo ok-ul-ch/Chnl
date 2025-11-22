@@ -20,18 +20,6 @@ internal struct LoopBackoff
     {
     }
 
-    /// Waits for backoff time using only CPU spinning
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void Spin()
-    {
-        Thread.SpinWait(1 << Math.Min(_waitIteration, MaxSpinIteration));
-
-        if (_waitIteration <= MaxSpinIteration)
-        {
-            _waitIteration++;
-        }
-    }
-
     /// Waits for backoff time. It can either be Spin (busy-wait/PAUSE) OR Yield (give up own CPU time and allow the OS scheduler to do other work)    
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void SpinOrYield()
