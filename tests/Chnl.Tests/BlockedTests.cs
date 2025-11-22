@@ -7,9 +7,9 @@ public class BlockedTests
 {
     private Blocked<Write> _blocked;
 
-    private static Thread SpawnWaitThread(WaitTo<Write> wait)
+    private static Thread SpawnWaitThread(Blocked<Write>.Operation op)
     {
-        var thread = new Thread(wait.Wait);
+        var thread = new Thread(op.Block);
         thread.Start();
         return thread;
     }
@@ -47,14 +47,14 @@ public class BlockedTests
         _blocked.TryRegister(out var wait);
         Assert.That(_blocked.IsEmpty, Is.False);
 
-        _blocked.Unregister(wait!);
+        _blocked.Cancel(wait!);
         Assert.That(_blocked.IsEmpty, Is.True);
     }
 
     [Test]
     public void Unregister_UnknownItem_Ignored()
     {
-        Assert.DoesNotThrow(() => _blocked.Unregister(new WaitTo<Write>()));
+        Assert.DoesNotThrow(() => _blocked.Cancel(new Blocked<Write>.Operation()));
     }
 
     [Test]

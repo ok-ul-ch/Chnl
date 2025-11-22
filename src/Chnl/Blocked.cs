@@ -6,50 +6,99 @@ internal struct Write;
 /// A container for blocking channel operations
 internal class Blocked<T>
 {
+    /// IMPORTANT: All methods must be called ONLY by the <see cref="Blocked{T}"/> as it handles all its thread-safety invariants
+    internal class Operation : IDisposable
+    {
+        private readonly ManualResetEventSlim _resetEvent = new(false);
+
+        public void Block()
+        {
+            _resetEvent.Wait();
+        }
+
+        public void Unblock()
+        {
+            _resetEvent.Set();
+        }
+
+        public void Dispose()
+        {
+            _resetEvent.Dispose();
+        }
+    }
+
     private readonly Lock _lock = new();
-    private volatile bool _isEmpty = true;
 
-    /// TODO: Model scenarios where LinkedList usage is cheaper and benchmark them
-    /// TODO: Reuse instances of <see cref="WaitTo{T}"/>. So that there is no need to allocate them for each <see cref="TryRegister"/> call
-    private readonly List<WaitTo<T>> _waitOperations = [];
+    // TODO: Model LinkedList/Resizable ring buffer/Queue usage and benchmark which one is better
+    private readonly List<Operation> _waitOperations = [];
 
-    public bool IsEmpty => _isEmpty;
-    public bool IsClosed { get; private set; }
+    // NOTE: Volatile is not sufficient for this field as we need sequential consistency
+    private int _isEmpty = 1;
+    private bool _isClosed = false;
 
-    /// Attempts to register a new wait operation. Returns false if the waiting channel is closed
+    internal bool IsClosed
+    {
+        get
+        {
+            // This is a test-only property, but still better to guard it with lock
+            lock (_lock)
+            {
+                return _isClosed;
+            }
+        }
+    }
+
+    public bool IsEmpty
+    {
+        get => Interlocked.CompareExchange(ref _isEmpty, 0, 0) == 1;
+        private set => Interlocked.Exchange(ref _isEmpty, value ? 1 : 0);
+    }
+
+    public void Block(Operation op)
+    {
+        using (op)
+        {
+            op.Block();
+        }
+    }
+
+    public void Cancel(Operation op)
+    {
+        using (op)
+        {
+            lock (_lock)
+            {
+                _waitOperations.Remove(op);
+                IsEmpty = _waitOperations.Count == 0;
+            }
+        }
+    }
+
+    /// Attempts to register a new block operation. Returns false if the waiting channel is closed
     ///
-    /// The caller must double-check his "wait" predicate and call <see cref="Unregister"/> method if it is not relevant anymore (i.e. the caller can proceed without blocking as requested operation has become available just now) 
-    public bool TryRegister(out WaitTo<T>? waitTo)
+    /// The caller must double-check his "wait" predicate and call <see cref="Cancel"/> method if it is not relevant anymore (i.e. the caller can proceed without blocking as requested operation has become available just now) 
+    public bool TryRegister(out Operation? op)
     {
         lock (_lock)
         {
-            if (IsClosed)
+            if (_isClosed)
             {
-                waitTo = null;
+                op = null;
                 return false;
             }
 
-            waitTo = new WaitTo<T>();
-            _waitOperations.Add(waitTo);
-            _isEmpty = false;
+            op = new Operation();
+            _waitOperations.Add(op);
+            IsEmpty = false;
             return true;
         }
     }
 
-    /// Removes an existing wait operation
-    public void Unregister(WaitTo<T> waitTo)
-    {
-        lock (_lock)
-        {
-            _waitOperations.Remove(waitTo);
-            _isEmpty = _waitOperations.Count == 0;
-        }
-    }
 
-    /// Finds the next available <see cref="WaitTo{T}"/> and unblocks it
+    /// Finds the next available Operation and Unblocks it
     public void UnblockNext()
     {
-        if (_isEmpty)
+        if (IsEmpty)
         {
             // No blocked operations available.
             return;
@@ -57,22 +106,17 @@ internal class Blocked<T>
 
         lock (_lock)
         {
-            if (_isEmpty)
+            if (IsEmpty)
             {
                 // We lost the race and someone else has unblocked all remaining operations 
                 return;
             }
 
-            var waitTo = _waitOperations[0];
-
-            if (waitTo == null)
-            {
-                return;
-            }
-
-            waitTo.Unblock();
+            var op = _waitOperations[0];
             _waitOperations.RemoveAt(0);
-            _isEmpty = _waitOperations.Count == 0;
+            op.Unblock();
+
+            IsEmpty = _waitOperations.Count == 0;
         }
     }
 
@@ -80,14 +124,14 @@ internal class Blocked<T>
     {
         lock (_lock)
         {
-            foreach (var wait in _waitOperations)
+            foreach (var op in _waitOperations)
             {
-                wait.Unblock();
+                op.Unblock();
             }
 
             _waitOperations.Clear();
-            _isEmpty = true;
-            IsClosed = true;
+            IsEmpty = true;
+            _isClosed = true;
         }
     }
 }

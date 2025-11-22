@@ -3,16 +3,16 @@ namespace Chnl.Tests;
 #pragma warning disable CS0618 // Type or member is obsolete
 [TestFixture, Timeout(5000)]
 #pragma warning restore CS0618 // Type or member is obsolete
-public class WaitToTests
+public class BlockedOperationTests
 {
     [Test]
-    public void Wait_ThenUnblock_Released()
+    public void Block_ThenUnblock_Released()
     {
-        var wait = new WaitTo<bool>();
+        var op = new Blocked<bool>.Operation();
         var waitCompleted = new ManualResetEventSlim(false);
         var blockedThread = new Thread(() =>
         {
-            wait.Wait();
+            op.Block();
             waitCompleted.Set();
         });
 
@@ -24,7 +24,7 @@ public class WaitToTests
         Assert.That(blockedThread.IsAlive);
         Assert.That(!waitCompleted.IsSet);
 
-        wait.Unblock();
+        op.Unblock();
 
         blockedThread.Join();
         Assert.That(!blockedThread.IsAlive);
@@ -33,10 +33,10 @@ public class WaitToTests
 
 
     [Test]
-    public void Unblock_ThenWait_ImmediatelyReleased()
+    public void Unblock_ThenBlock_ImmediatelyReleased()
     {
-        var wait = new WaitTo<bool>();
-        wait.Unblock();
-        wait.Wait();
+        var op = new Blocked<bool>.Operation();
+        op.Unblock();
+        op.Block();
     }
 }

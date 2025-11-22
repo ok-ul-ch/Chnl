@@ -184,23 +184,20 @@ public class BoundedChannel<T>
                 return Result<Void>.Closed();
             }
 
-            using (write)
+            var isClosed = IsClosed();
+            if (!isClosed && IsFull())
             {
-                var isClosed = IsClosed();
-                if (!isClosed && IsFull())
-                {
-                    // Fall back to the blocking wait as most likely reader(s) can't keep up with writer(s), thus we'll have to wait longer 
-                    write!.Wait();
-                }
-                else
-                {
-                    // The channel has become available/closed just now, we shall try to write again without blocking
-                    _blockedWrites.Unregister(write!);
+                // Fall back to the blocking wait as most likely reader(s) can't keep up with writer(s), thus we'll have to wait longer 
+                _blockedWrites.Block(write!);
+            }
+            else
+            {
+                // The channel has become available/closed just now, we shall try to write again without blocking
+                _blockedWrites.Cancel(write!);
 
-                    if (isClosed)
-                    {
-                        return Result<Void>.Closed();
-                    }
+                if (isClosed)
+                {
+                    return Result<Void>.Closed();
                 }
             }
         }
@@ -318,23 +315,20 @@ public class BoundedChannel<T>
                 return Result<T>.Closed();
             }
 
-            using (read)
+            if (IsEmpty())
             {
-                if (IsEmpty())
+                if (IsClosed())
                 {
-                    if (IsClosed())
-                    {
-                        return Result<T>.Closed();
-                    }
+                    return Result<T>.Closed();
+                }
 
-                    // Fall back to the blocking wait as most likely the channel will remain empty for longer time
-                    read!.Wait();
-                }
-                else
-                {
-                    // Meanwhile, some writer has written to the channel. We shall not wait and try to perform the read again
-                    _blockedReads.Unregister(read!);
-                }
+                // Fall back to the blocking wait as most likely the channel will remain empty for longer time
+                _blockedReads.Block(read!);
+            }
+            else
+            {
+                // Meanwhile, some writer has written to the channel. We shall not wait and try to perform the read again
+                _blockedReads.Cancel(read!);
             }
         }
     }
